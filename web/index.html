@@ -108,8 +108,13 @@
         var cur = api.getSceneElements();
         var mine = (cur || []).filter(function (x) { return !isAda(x); });
         var theirs = (j.elements || []).filter(isAda);
-        api.updateScene({ elements: mine.concat(theirs) });
-        if (theirs.length) { setStatus("answer added ✓"); setTimeout(function () { setStatus("live"); }, 2600); }
+        var all = mine.concat(theirs);
+        api.updateScene({ elements: all });
+        if (theirs.length) {
+          // bring the answer into view (it may land off the edge of a narrow window)
+          try { api.scrollToContent(all, { fitToContent: true, animate: true, duration: 500 }); } catch (e) {}
+          setStatus("answer added ✓"); setTimeout(function () { setStatus("live"); }, 2600);
+        }
       }
     } catch (err) {}
   }

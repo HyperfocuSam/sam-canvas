@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Start the sam-canvas bridge and open the canvas as a DEDICATED window.
-# Idempotent: reuses the running server if the port is already up.
+# Idempotent about BOTH the server and the window: if the canvas is already running,
+# it does NOT spawn another window (no duplicates on repeated launches).
+# Set SAM_CANVAS_FORCE_WINDOW=1 to open a fresh window even when already running.
 set -uo pipefail
 
 PORT="${SAM_CANVAS_PORT:-3899}"
@@ -9,9 +11,11 @@ export SAM_CANVAS_FILE="${SAM_CANVAS_FILE:-$DIR/canvas.excalidraw}"
 export SAM_CANVAS_PORT="$PORT"
 URL="http://localhost:$PORT"
 
+STARTED=0
 if ! curl -s -o /dev/null "$URL/canvas" 2>/dev/null; then
   nohup python3 "$DIR/server.py" > "$DIR/.serve.log" 2>&1 &
   sleep 2
+  STARTED=1
 fi
 
 if ! curl -s -o /dev/null "$URL/canvas" 2>/dev/null; then
@@ -22,9 +26,15 @@ fi
 echo "sam-canvas live → $URL"
 echo "canvas file: $SAM_CANVAS_FILE"
 
+# Only open a window when we actually started the server (avoids duplicate windows).
+if [ "$STARTED" = "0" ] && [ -z "${SAM_CANVAS_FORCE_WINDOW:-}" ]; then
+  echo "Already running — its window should be open. If you closed it, open $URL"
+  echo "(or re-run with SAM_CANVAS_FORCE_WINDOW=1 to pop a fresh window)."
+  exit 0
+fi
+
 # Prefer a chromeless Chrome/Chromium "app window" docked to the right half of the
-# screen — a dedicated space you can always find (no tab hunting). Falls back to a
-# normal browser open on any platform.
+# screen — a dedicated space you can always find. Falls back to a normal browser open.
 CHROME=""
 for c in \
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \

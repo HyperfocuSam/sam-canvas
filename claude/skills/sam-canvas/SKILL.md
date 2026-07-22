@@ -12,6 +12,13 @@ page writes only the human's elements, Claude writes only `ada-*` elements.
 
 Set `SAM_CANVAS_HOME` to the sam-canvas checkout, or run these from that directory.
 
+## Keep the friction near zero
+
+Treat ANY minimal nudge as "read the canvas and answer it": a bare `/sam-canvas`, a one-word message
+("go", "look", "?"), or a short instruction. Never make the user restate what they already drew. They
+may also **write the request as text on the canvas** — read it from there via `summary` instead of
+asking them to retype it. One keystroke in, answer on the canvas out.
+
 ## When invoked
 
 1. **Open the canvas** (idempotent):

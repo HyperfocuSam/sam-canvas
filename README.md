@@ -1,10 +1,10 @@
 # sam-canvas
 
-**A live shared drawing canvas for you and your AI coding agent.**
+**A live drawing canvas for people who live in an AI coding agent's terminal.**
 
-You sketch on an infinite Excalidraw canvas in your browser. Your agent — Claude Code, or any tool
-that can run a shell command — reads your sketch *with full context of your project* and draws a
-diagram answer back onto the same canvas, live. No copy-pasting screenshots into a chat box.
+You sketch on an Excalidraw canvas in your browser; your agent — Claude Code, or any tool that can
+run a shell command — reads your sketch *with full context of your project* and draws a diagram
+answer back onto the same canvas, live.
 
 English · [简体中文](README.zh-Hans.md) · [繁體中文](README.zh-Hant.md) · MIT License
 
@@ -12,31 +12,48 @@ English · [简体中文](README.zh-Hans.md) · [繁體中文](README.zh-Hant.md
 
 *Left: a rough sketch. Right: the agent read it and drew an answer onto the same canvas, in blue.*
 
-## Why
+## Why I made this
 
-Chat-based AI makes you translate a spatial idea into words. Standalone AI whiteboards can draw, but
-their model only sees the canvas — it knows nothing about your codebase or your conversation.
+I have ADHD and I think visually, but I live in the Claude Code terminal all day — and nothing let me
+sketch an idea and have *my* agent answer it on a canvas. So I built this for myself and I'm sharing
+it as a skill in case you're the same kind of person.
 
-sam-canvas keeps the drawing **and** wires it to *your* agent, the one that already has context. You
-think on the canvas; it answers on the canvas, and it actually knows what you are working on.
+It is deliberately small. The whiteboard part isn't new — Excalidraw already does AI text-to-diagram.
+The one thing here that nothing else does for a terminal user: **the AI that answers is your own
+agent, the one that already knows your codebase and your conversation** — not a context-blind model
+that only sees the drawing.
 
-## Requirements
+This is a personal tool shared openly, not a product. No roadmap, no signups. Fork it, bend it, keep it.
 
-- **Python 3.8+** (standard library only — nothing to `pip install`)
-- A modern **browser** (Excalidraw loads from a CDN, so you need internet the first time)
-- An **AI coding agent** that can run shell commands (e.g. Claude Code). Optional but that is the point.
-- Optional: `rsvg-convert` (from `librsvg`) for PNG previews; SVG previews work without it.
-
-## Quick start
+## Use it with Claude Code (the main way)
 
 ```bash
 git clone https://github.com/HyperfocuSam/sam-canvas.git
-cd sam-canvas
-./start.sh            # starts the local server (port 3899) and opens the canvas
+export SAM_CANVAS_HOME="$PWD/sam-canvas"
+# copy the drop-in into your Claude Code config:
+cp -r sam-canvas/claude/skills/sam-canvas   ~/.claude/skills/
+cp    sam-canvas/claude/commands/sam-canvas.md ~/.claude/commands/
 ```
 
-Draw something. Then ask your agent to answer it (see below). Your drawing autosaves as you go, so
-the agent can read it at any time — there is no "export the file" step.
+Then, in Claude Code:
+
+1. Type **`/sam-canvas`** → a dedicated canvas window opens (docked to the right of your screen).
+2. **Draw something.** Boxes and labels read best; you can also write your request *on the canvas*.
+3. Nudge the agent — even one word ("look", "go", "?") — and it reads your sketch, understands it
+   against your repo, and draws the answer on the same canvas within ~1s. A **Collapse** button folds
+   it away when you're done.
+
+## Use it with any agent
+
+No Claude Code required — the integration is three shell steps (read, author JSON, merge). See
+[`docs/for-agents.md`](docs/for-agents.md) for the full contract and the Excalidraw element format.
+
+```bash
+./start.sh                                # open the canvas
+python3 canvas.py summary                 # your agent reads the current sketch
+# ...agent authors an answer as Excalidraw elements → response.json...
+python3 canvas.py merge response.json     # appears on the live canvas within ~1s
+```
 
 ## How it works
 
@@ -54,30 +71,24 @@ You draw in the browser ──autosave──▶ canvas.excalidraw
 
 - **Race-safe by design.** You and the agent own different halves of the file: the browser only
   writes your elements, the agent only writes `ada-*` elements. Your work is never overwritten.
-- **Collapse.** A button in the top bar folds the whole canvas into a small corner pill and back.
-- **Loopback only.** The server binds `127.0.0.1` — nothing is exposed to the network.
+- **Your canvas file persists** across sessions — it is an external brain you can leave and come back to.
+- **Loopback only.** The server binds `127.0.0.1`; nothing is exposed to the network.
 
-## Use it with Claude Code
+## Honest limits
 
-A ready-made skill and `/sam-canvas` command live in [`claude/`](claude). Point Claude Code at this
-checkout (`export SAM_CANVAS_HOME=/path/to/sam-canvas`) and copy `claude/skills/sam-canvas` and
-`claude/commands/sam-canvas.md` into your `.claude/` folder. Then:
+- **You have to nudge it.** The agent doesn't watch the canvas — you poke it each turn. That is the
+  price of keeping *your* context: the answer comes from your live agent session, so it can't run
+  fully on its own without becoming context-blind. A one-word nudge is the intended cost.
+- **Structured beats freehand.** It reads shapes and text exactly; pure scribbles it has to render
+  and squint at. Draw boxes and labels for the best results.
+- **Excalidraw loads from a CDN**, so the first load needs internet.
 
-1. Type `/sam-canvas` → the canvas opens.
-2. Draw, then say "look" or `/sam-canvas turn this into an architecture diagram`.
-3. Claude reads your sketch, understands it against your repo, and draws the answer on the canvas.
+## Requirements
 
-## Use it with any agent
-
-The integration is three shell steps — read, author JSON, merge. See
-[`docs/for-agents.md`](docs/for-agents.md) for the full contract and the Excalidraw element format.
-
-```bash
-python3 canvas.py summary                 # read the current sketch (types, text, bounding box)
-# ...your agent designs an answer as Excalidraw elements → response.json...
-python3 canvas.py merge response.json     # appears on the live canvas within ~1s
-python3 canvas.py preview                 # optional: render canvas-preview.png to double-check
-```
+- **Python 3.8+** (standard library only — nothing to `pip install`)
+- A modern **browser** (Chrome/Chromium gets a dedicated docked window; others open a normal tab)
+- An **AI coding agent** that can run shell commands (e.g. Claude Code)
+- Optional: `rsvg-convert` (from `librsvg`) for PNG previews; SVG previews work without it
 
 ## Configuration
 
@@ -90,5 +101,5 @@ Stop the server: `kill $(lsof -tiTCP:3899 -sTCP:LISTEN)`. Blank the canvas: `pyt
 
 ## Credits & license
 
-Built on [Excalidraw](https://github.com/excalidraw/excalidraw) (MIT). sam-canvas is released under
-the [MIT License](LICENSE).
+Built on [Excalidraw](https://github.com/excalidraw/excalidraw) (MIT). Released under the
+[MIT License](LICENSE). Made by [Sam Wong](https://github.com/HyperfocuSam).

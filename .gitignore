@@ -1,0 +1,14 @@
+# the live working canvas + previews + scratch (examples/ stays tracked)
+canvas.excalidraw
+*-preview.svg
+*-preview.png
+*.prev.excalidraw
+_response.json
+.serve.log
+
+# python
+__pycache__/
+*.pyc
+
+# os
+.DS_Store

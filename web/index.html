@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>sam-canvas</title>
+<style>
+  html, body { height: 100%; margin: 0; font-family: system-ui, -apple-system, sans-serif; }
+  #wrap { position: fixed; inset: 0; display: flex; flex-direction: column; }
+  #bar { display: flex; align-items: center; gap: 12px; padding: 7px 14px; background: #1971c2; color: #fff; }
+  #bar b { font-weight: 600; letter-spacing: .3px; }
+  #status { font-size: 12px; opacity: .9; }
+  #bar .sp { flex: 1; }
+  #bar button { background: rgba(255,255,255,.16); color: #fff; border: 0; border-radius: 7px; padding: 6px 12px; cursor: pointer; font-size: 13px; }
+  #bar button:hover { background: rgba(255,255,255,.28); }
+  #host { flex: 1; position: relative; }
+  #root { position: absolute; inset: 0; }
+  /* collapsed: fold the whole thing to a small pill in the corner */
+  body.collapsed #wrap { inset: auto auto 18px 18px; width: max-content; border-radius: 10px; overflow: hidden; box-shadow: 0 6px 24px rgba(0,0,0,.25); }
+  body.collapsed #bar { border-radius: 10px; }
+  body.collapsed #host { display: none; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="bar">
+    <b>sam-canvas</b>
+    <span id="status">connecting…</span>
+    <span class="sp"></span>
+    <button id="collapse" title="Fold the canvas away">Collapse &#9656;</button>
+  </div>
+  <div id="host"><div id="root"></div></div>
+</div>
+
+<script>window.EXCALIDRAW_ASSET_PATH = "https://unpkg.com/@excalidraw/excalidraw@0.17.6/dist/";</script>
+<script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@excalidraw/excalidraw@0.17.6/dist/excalidraw.production.min.js" crossorigin></script>
+<script>
+(function () {
+  var e = React.createElement;
+  var Excalidraw = (window.ExcalidrawLib || {}).Excalidraw;
+  var api = null, saveTimer = null, saving = false, lastAdaHash = "";
+  var statusEl = document.getElementById("status");
+
+  function isAda(x) { return String((x && x.id) || "").indexOf("ada-") === 0; }
+  function adaHash(els) { return JSON.stringify((els || []).filter(isAda)); }
+  function setStatus(t) { statusEl.textContent = t; }
+
+  if (!Excalidraw) { setStatus("failed to load Excalidraw (offline?)"); return; }
+
+  async function boot() {
+    var data = { elements: [], appState: { viewBackgroundColor: "#ffffff" }, scrollToContent: true };
+    try {
+      var j = await (await fetch("/canvas")).json();
+      data.elements = j.elements || [];
+      if (j.appState && j.appState.viewBackgroundColor) data.appState.viewBackgroundColor = j.appState.viewBackgroundColor;
+      lastAdaHash = adaHash(data.elements);
+    } catch (err) {}
+    ReactDOM.createRoot(document.getElementById("root")).render(
+      e(Excalidraw, {
+        initialData: data,
+        excalidrawAPI: function (a) { api = a; },
+        onChange: onChange
+      })
+    );
+    setStatus("live — draw, then ask your agent");
+    setInterval(poll, 1200);
+  }
+
+  function onChange(elements) {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () { save(elements); }, 700);
+  }
+
+  async function save(elements) {
+    if (saving) return; saving = true;
+    try {
+      var bg = api ? api.getAppState().viewBackgroundColor : "#ffffff";
+      await fetch("/canvas", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ elements: elements, appState: { viewBackgroundColor: bg } })
+      });
+    } catch (err) {}
+    saving = false;
+  }
+
+  async function poll() {
+    if (!api) return;
+    try {
+      var j = await (await fetch("/canvas")).json();
+      var h = adaHash(j.elements || []);
+      if (h !== lastAdaHash) {
+        lastAdaHash = h;
+        var cur = api.getSceneElements();
+        var mine = (cur || []).filter(function (x) { return !isAda(x); });
+        var theirs = (j.elements || []).filter(isAda);
+        api.updateScene({ elements: mine.concat(theirs) });
+        if (theirs.length) { setStatus("Claude answered ✓"); setTimeout(function () { setStatus("live"); }, 2600); }
+      }
+    } catch (err) {}
+  }
+
+  document.getElementById("collapse").onclick = function () {
+    var c = document.body.classList.toggle("collapsed");
+    this.innerHTML = c ? "Expand &#9666;" : "Collapse &#9656;";
+  };
+
+  boot();
+})();
+</script>
+</body>
+</html>

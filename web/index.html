@@ -40,12 +40,21 @@
 (function () {
   var e = React.createElement;
   var Excalidraw = (window.ExcalidrawLib || {}).Excalidraw;
-  var api = null, saveTimer = null, saving = false, lastAdaHash = "";
+  var api = null, saveTimer = null, saving = false, lastAdaHash = "", knownFiles = {};
   var statusEl = document.getElementById("status");
 
   function isAda(x) { return String((x && x.id) || "").indexOf("ada-") === 0; }
   function adaHash(els) { return JSON.stringify((els || []).filter(isAda)); }
   function setStatus(t) { statusEl.textContent = t; }
+  function registerFiles(files) {   // hand image bytes to Excalidraw so image elements render
+    if (!files || !api || !api.addFiles) return;
+    var add = [];
+    for (var id in files) {
+      if (!knownFiles[id]) { knownFiles[id] = 1; var f = files[id];
+        if (f && f.dataURL) add.push({ id: id, dataURL: f.dataURL, mimeType: f.mimeType || "image/png", created: f.created || 1 }); }
+    }
+    if (add.length) api.addFiles(add);
+  }
 
   if (!Excalidraw) { setStatus("failed to load Excalidraw (offline?)"); return; }
 
@@ -54,6 +63,8 @@
     try {
       var j = await (await fetch("/canvas")).json();
       data.elements = j.elements || [];
+      data.files = j.files || {};
+      for (var fid in data.files) knownFiles[fid] = 1;   // initial images render via initialData.files
       if (j.appState && j.appState.viewBackgroundColor) data.appState.viewBackgroundColor = j.appState.viewBackgroundColor;
       lastAdaHash = adaHash(data.elements);
     } catch (err) {}
@@ -77,9 +88,10 @@
     if (saving) return; saving = true;
     try {
       var bg = api ? api.getAppState().viewBackgroundColor : "#ffffff";
+      var files = (api && api.getFiles) ? api.getFiles() : {};
       await fetch("/canvas", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ elements: elements, appState: { viewBackgroundColor: bg } })
+        body: JSON.stringify({ elements: elements, appState: { viewBackgroundColor: bg }, files: files })
       });
     } catch (err) {}
     saving = false;
@@ -92,11 +104,12 @@
       var h = adaHash(j.elements || []);
       if (h !== lastAdaHash) {
         lastAdaHash = h;
+        registerFiles(j.files);   // register any new agent image bytes before rendering
         var cur = api.getSceneElements();
         var mine = (cur || []).filter(function (x) { return !isAda(x); });
         var theirs = (j.elements || []).filter(isAda);
         api.updateScene({ elements: mine.concat(theirs) });
-        if (theirs.length) { setStatus("Claude answered ✓"); setTimeout(function () { setStatus("live"); }, 2600); }
+        if (theirs.length) { setStatus("answer added ✓"); setTimeout(function () { setStatus("live"); }, 2600); }
       }
     } catch (err) {}
   }

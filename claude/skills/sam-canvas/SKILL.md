@@ -47,3 +47,9 @@ asking them to retype it. One keystroke in, answer on the canvas out.
 
 The human's elements are never edited; each merge replaces the previous agent answer. Element
 format and the full contract: `docs/for-agents.md`.
+
+## Answering with an image
+
+If a picture answers better than shapes (a mockup, mascot, moodboard), generate a PNG with your
+image API and place it: `python3 "${SAM_CANVAS_HOME:-.}/canvas.py" image out.png --caption "..."`.
+It lands as a movable image element and shows on the live canvas. See `docs/for-agents.md`.

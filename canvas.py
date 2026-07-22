@@ -18,9 +18,11 @@ The agent authors answer elements at natural coordinates near (0,0); merge handl
 recolor, tagging, and de-duplication. Agent elements are marked with id-prefix "ada-".
 """
 import argparse
+import base64
 import html
 import json
 import math
+import mimetypes
 import os
 import shutil
 import subprocess
@@ -102,26 +104,25 @@ def cmd_summary(args):
 
 
 # ---------------------------------------------------------------- merge
-def cmd_merge(args):
-    data = load(args.file)
-    els = data["elements"]
-    sam = [e for e in els if not is_ada(e)]
-    with open(args.response, encoding="utf-8") as f:
-        resp = json.load(f)
-    if isinstance(resp, dict):
-        resp_els = resp.get("elements", [])
-    elif isinstance(resp, list):
-        resp_els = resp
-    else:
-        resp_els = []
-    if not resp_els:
-        sys.exit("Response file has no elements (expected a JSON list, or an object with an 'elements' array).")
+def _encode_image(path):
+    with open(path, "rb") as f:
+        raw = f.read()
+    mime = mimetypes.guess_type(path)[0] or "image/png"
+    return mime, "data:%s;base64,%s" % (mime, base64.b64encode(raw).decode("ascii"))
+
+
+def merge_elements(file, resp_els):
+    """Merge agent-authored elements (may include images) to the right of the human's sketch.
+    An image element is authored as {"type":"image","_file":"path.png","x":,"y":,"width":,"height":};
+    the file is base64-encoded into the canvas `files` map. Returns the normalized elements."""
+    data = load(file)
+    sam = [e for e in data["elements"] if not is_ada(e)]
 
     # backup for undo
-    if os.path.exists(args.file):
-        shutil.copyfile(args.file, args.file.replace(".excalidraw", ".prev.excalidraw"))
+    if os.path.exists(file):
+        shutil.copyfile(file, file.replace(".excalidraw", ".prev.excalidraw"))
 
-    # offset target: to the right of Sam's sketch, top-aligned
+    # offset target: to the right of the human's sketch, top-aligned
     if sam:
         _, sy0, sx1, _ = bbox(sam)
         target_x, target_y = sx1 + GAP, sy0
@@ -131,7 +132,7 @@ def cmd_merge(args):
     dx, dy = target_x - rx0, target_y - ry0
 
     group_id = f"{ADA_PREFIX}response"
-    normalized = []
+    new_files, normalized = {}, []
     for i, el in enumerate(resp_els):
         el = dict(el)
         el["id"] = f"{ADA_PREFIX}{i}-{el.get('id', el.get('type', 'el'))}"
@@ -170,13 +171,58 @@ def cmd_merge(args):
             el.setdefault("containerId", None)
             el.setdefault("originalText", el.get("text", ""))
             el.setdefault("lineHeight", 1.25)
+        if el.get("type") == "image":
+            src = el.pop("_file", None) or el.pop("_path", None)
+            if src:
+                if not os.path.exists(src):
+                    sys.exit(f"Image not found: {src}")
+                fid = f"{ADA_PREFIX}img-{i}"
+                mime, data_url = _encode_image(src)
+                new_files[fid] = {"mimeType": mime, "id": fid, "dataURL": data_url,
+                                  "created": 1, "lastRetrieved": 1}
+                el["fileId"] = fid
+            el.setdefault("status", "saved")
+            el.setdefault("scale", [1, 1])
+            el.setdefault("width", 320)
+            el.setdefault("height", 320)
         normalized.append(el)
 
-    data["elements"] = sam + normalized  # Sam's untouched + fresh Ada response (old Ada dropped)
+    # files map: keep those the human's own images reference, add the agent's new ones
+    human_fileids = {e.get("fileId") for e in sam if e.get("type") == "image" and e.get("fileId")}
+    disk_files = data.get("files") or {}
+    data["files"] = {fid: disk_files[fid] for fid in human_fileids if fid in disk_files}
+    data["files"].update(new_files)
+
+    data["elements"] = sam + normalized  # human's untouched + fresh agent answer (old agent dropped)
     data.setdefault("appState", {}).setdefault("viewBackgroundColor", "#ffffff")
-    save(args.file, data)
-    print(f"Merged {len(normalized)} agent elements to the right of your sketch → {args.file}")
+    save(file, data)
+    return normalized
+
+
+def cmd_merge(args):
+    with open(args.response, encoding="utf-8") as f:
+        resp = json.load(f)
+    resp_els = resp.get("elements", []) if isinstance(resp, dict) else resp if isinstance(resp, list) else []
+    if not resp_els:
+        sys.exit("Response file has no elements (expected a JSON list, or an object with an 'elements' array).")
+    n = merge_elements(args.file, resp_els)
+    print(f"Merged {len(n)} agent elements to the right of your sketch → {args.file}")
     print("The live canvas shows it within ~1s (or run `canvas.py preview`).")
+
+
+def cmd_image(args):
+    """Convenience: drop a single image (that your agent generated) onto the canvas, with an optional caption."""
+    if not os.path.exists(args.path):
+        sys.exit(f"Image not found: {args.path}")
+    resp_els = [{"type": "image", "_file": args.path, "x": 0, "y": 0,
+                 "width": args.width, "height": args.height}]
+    if args.caption:
+        resp_els.append({"type": "text", "x": 0, "y": args.height + 14, "width": args.width,
+                         "height": 24, "text": args.caption, "fontSize": 16, "fontFamily": 2,
+                         "strokeColor": "#495057"})
+    merge_elements(args.file, resp_els)
+    print(f"Placed image {args.path} on the canvas → {args.file}")
+    print("The live canvas shows it within ~1s.")
 
 
 # ---------------------------------------------------------------- preview (self-contained SVG renderer)
@@ -247,6 +293,13 @@ def render_svg(data):
                 dy = 0 if i == 0 else fs * 1.25
                 out.append(f'<tspan x="{tx:.1f}" dy="{dy:.1f}">{esc(ln)}</tspan>')
             out.append("</text>")
+        elif t == "image":
+            fid = el.get("fileId")
+            durl = ((data.get("files") or {}).get(fid) or {}).get("dataURL") if fid else None
+            if durl:
+                out.append(f'{g_open}<image href="{durl}" x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" opacity="{op:.2f}" preserveAspectRatio="xMidYMid meet"/>{g_close}')
+            else:
+                out.append(f'{g_open}<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" fill="#f1f3f5" stroke="#adb5bd"/><text x="{x+8:.1f}" y="{y+20:.1f}" font-size="12" fill="#868e96">[image]</text>{g_close}')
     out.append("</svg>")
     return "\n".join(out)
 
@@ -295,9 +348,12 @@ def main():
     sub.add_parser("summary")
     m = sub.add_parser("merge"); m.add_argument("response")
     p = sub.add_parser("preview"); p.add_argument("--no-open", action="store_true")
+    im = sub.add_parser("image"); im.add_argument("path"); im.add_argument("--caption", default=None)
+    im.add_argument("--width", type=int, default=360); im.add_argument("--height", type=int, default=360)
     sub.add_parser("init")
     args = ap.parse_args()
-    {"summary": cmd_summary, "merge": cmd_merge, "preview": cmd_preview, "init": cmd_init}[args.cmd](args)
+    {"summary": cmd_summary, "merge": cmd_merge, "preview": cmd_preview,
+     "image": cmd_image, "init": cmd_init}[args.cmd](args)
 
 
 if __name__ == "__main__":

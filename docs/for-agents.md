@@ -85,5 +85,24 @@ ink `#1e1e1e`. Leave `backgroundColor` off (defaults to transparent) for outline
   repo / conversation / docs and make the answer specific, not generic.
 - To wipe the canvas: `python3 canvas.py init` (after stopping the server or removing the file).
 
+## Answering with an image
+
+The agent can answer with a generated **image**, not just shapes — a mockup, a mascot, a moodboard.
+Generate a PNG with whatever image API your agent has, then place it:
+
+```bash
+python3 canvas.py image path/to.png --caption "draft mascot" --width 360 --height 360
+```
+
+Or include an image element in your `response.json` (mixed with shapes/text):
+
+```jsonc
+{ "type": "image", "_file": "path/to.png", "x": 0, "y": 0, "width": 360, "height": 360 }
+```
+
+`merge` base64-encodes the file into the canvas's `files` map and adds a movable, resizable image
+element; it appears on the live canvas like any other answer. Image generation stays on the agent's
+side (it needs an API key) — the canvas only handles placement, so the project itself stays key-free.
+
 A ready-made drop-in for Claude Code lives in [`../claude/`](../claude) — a skill plus a
 `/sam-canvas` command.

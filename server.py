@@ -73,10 +73,16 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 return self._send(400, '{"error":"bad json"}')
             page_els = scene.get("elements", [])
+            page_files = scene.get("files") or {}
             disk = load()
             disk_ada = [e for e in disk.get("elements", []) if is_ada(e)]      # agent's half, preserved
             page_nonada = [e for e in page_els if not is_ada(e)]               # human's half, updated
             disk["elements"] = page_nonada + disk_ada
+            # files: page images (human) as base; agent's image files from disk stay authoritative
+            disk_files = disk.get("files") or {}
+            ada_fids = {e.get("fileId") for e in disk_ada if e.get("type") == "image" and e.get("fileId")}
+            kept_agent = {fid: disk_files[fid] for fid in ada_fids if fid in disk_files}
+            disk["files"] = {**page_files, **kept_agent}
             bg = (scene.get("appState") or {}).get("viewBackgroundColor")
             if bg:
                 disk.setdefault("appState", {})["viewBackgroundColor"] = bg
